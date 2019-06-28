@@ -1,0 +1,152 @@
+---
+title: "Prediction with lasso"
+author: "Michael YANG"
+date: "12/6/2018"
+output:
+  word_document: default
+  pdf_document: default
+  html_document: default
+---
+\noindent 1.
+```{r}
+library(igraph)
+size=matrix(1,20)
+density=matrix(1,20)
+clustercoef=matrix(1,20)
+for( i in 1:20){
+  dat=read.csv(paste('/Users/yangzhenxiong/Documents/R/PS3/adoption/sample',i,'.csv',sep = ""))
+  s=nrow(dat)
+  size[i]=s
+  edge=as.matrix(read.csv(paste('/Users/yangzhenxiong/Documents/R/PS3/adoption/cluster',i,'_edge.csv',sep = ""),header = FALSE))
+  graph=graph_from_adjacency_matrix(edge)
+  d=edge_density(graph,loops = FALSE)
+  density[i]=d
+  ccoef=transitivity(graph)
+  clustercoef[i]=ccoef
+} 
+result=cbind(size,density,clustercoef)
+colnames(result)=c("SIZE","DENSITY","CLUSTERCOEF")
+result
+paste("The group with highest density is No.",which.max(density))
+paste("The group with highest clustering coefficient is No.",which.max(clustercoef))
+```
+
+\noindent 2.
+```{r}
+Y=matrix(20:1)
+for(i in 1:20){
+  temp=read.csv(paste('/Users/yangzhenxiong/Documents/R/PS3/adoption/sample',i,'.csv',sep = ""))
+  Y[i]=sum(temp[,1])}
+reg=glm(Y~size+density+clustercoef)
+summary(reg)
+```
+
+under the regression adoption respecting to size, density, network clustercoefficent with significant level of 0.05, all the three factors have significant impact on the adoption.
+
+
+\noindent 3.
+```{r}
+l=0.79
+edge=as.matrix(read.csv('/Users/yangzhenxiong/Documents/R/PS3/adoption/cluster7_edge.csv',sep=',',header=FALSE))
+g=graph.adjacency(edge,mode="undirected",weighted=NULL)
+ce=centr_degree(g,mode="total",normalized = T)
+V(g)$color = ifelse(edge[,1]==1,"skyblue","grey")
+plot.igraph(g,vertex.size=((ce$res)*1.5),vertex.shape="circle",layout=layout.fruchterman.reingold,vertex.label=NA,edge.arrow.size=0.5,arrow.size=1,arrow.width=1,xlim=c(-l,l),ylim=c(-l,l))
+```
+
+\noindent 4.
+For this question, we apply the LASSO regression to select variables and remove some the unrealted ones. Then we use the selected variables to do the logit regression.
+```{r}
+#find all the possible variables and construct the database.
+
+library(glmnet)
+mydata=data.frame()
+for( i in 1:20){
+  dat=read.csv(paste('/Users/yangzhenxiong/Documents/R/PS3/adoption/sample',i,'.csv',sep = ""))
+  edge=as.matrix(read.csv(paste('/Users/yangzhenxiong/Documents/R/PS3/adoption/cluster',i,'_edge.csv',sep = ""),header = FALSE))
+  g=graph_from_adjacency_matrix(edge)
+  deg=degree(g,mode="in")
+  size=nrow(dat)
+  eigen=eigen_centrality(g,directed = FALSE)
+  cdeg=centr_degree(g,mode="in")
+  dens=edge_density(graph,loops = FALSE)
+  g_trans=transitivity(g,type="global")
+  l_trans=transitivity(g,type="local")
+  bet <- betweenness(g, directed = TRUE)
+  clo <- closeness(g, mode = "out")
+  apl=average.path.length(g, directed=TRUE, unconnected=TRUE)
+  diam=diameter(g, directed = TRUE)
+  ass=assortativity_degree(g,directed = TRUE) 
+  mdata=cbind(dat,deg,size,cdeg$centralization,dens,g_trans,l_trans,bet,clo,apl,ass,diam,eigen$vector)
+  mydata=rbind(mydata,mdata)}
+write.csv(mydata,file="/Users/yangzhenxiong/Documents/R/PS3/adoption/mydata.csv")
+
+#use the cross-validation model to select the factors.
+
+library(glmnet)
+edata=as.matrix(read.csv("/Users/yangzhenxiong/Documents/R/PS3/adoption/mydata.csv"))
+x1=edata[,c(3:17)]
+y1=edata[,2]
+x=apply(x1,2,as.numeric)
+y=as.numeric(y1)
+cvglm=cv.glmnet(x,y,family="binomial",type.measure ="class" )
+plot(cvglm)
+
+#choose the value of lambda that gives the minimum mean of cross-validated error 
+
+min=cvglm$lambda.min
+coef(cvglm,s=min)
+
+#use glm to regress the model.
+
+dataf=as.data.frame(read.csv("/Users/yangzhenxiong/Documents/R/PS3/adoption/mydata.csv"))
+model=glm(adoption~age+smart+deg+size+cdeg.centralization+g_trans+l_trans+bet+ass+eigen.vector,family = binomial(),data=dataf)
+summary(model)
+```
+Answer:
+In our result, we find that the variables, including smart,degree,betweeness centrality,eigenvector centrality, have significant impact on the adoption. The result is shown above.
+
+
+\noindent 5.
+```{r}
+#Use the LASS to predict the original data and find the threholds value.
+
+pre_original=predict(cvglm,newx=x,type="response",s=min,family=binomial(link = logit))
+library(pROC)
+mroc=roc(mydata$adoption,pre=pre_original)
+plot(mroc, print.auc=TRUE, auc.polygon=TRUE, grid=c(0.1, 0.2),
+     grid.col=c("green", "red"), max.auc.polygon=TRUE,
+     auc.polygon.col="skyblue", print.thres=TRUE)
+
+#apply the LASS and threshold to predict the new data.
+
+apre=matrix(20:1)
+for (i in 21:40){
+dat=read.csv(paste('/Users/yangzhenxiong/Documents/R/PS3/prediction/prediction',i,'.csv',sep = ""))
+  edge=as.matrix(read.csv(paste('/Users/yangzhenxiong/Documents/R/PS3/prediction/cluster',i,'_edge.csv',sep = ""),header = FALSE))
+  g=graph_from_adjacency_matrix(edge)
+  deg=degree(g,mode="in")
+  size=nrow(dat)
+  eigen=eigen_centrality(g,directed = FALSE)
+  cdeg=centr_degree(g,mode="in")
+  dens=edge_density(graph,loops = FALSE)
+  g_trans=transitivity(g,type="global")
+  l_trans=transitivity(g,type="local")
+  bet <- betweenness(g, directed = TRUE)
+  clo <- closeness(g, mode = "out")
+  apl=average.path.length(g, directed=TRUE, unconnected=TRUE)
+  diam=diameter(g, directed = TRUE)
+  ass=assortativity_degree(g,directed = TRUE) 
+  ndata=as.matrix(cbind(dat,deg,size,cdeg$centralization,dens,g_trans,l_trans,bet,clo,apl,ass,diam,eigen$vector))
+  pre=predict(cvglm,newx=ndata,type="response",s=min,family=binomial)
+  adoption=ifelse(pre>=0.332,1,0)
+  apre[i-20]=sum(adoption)
+}
+RANK=matrix()
+RANK=t(rbind(order(apre,decreasing = TRUE)+20,sort(apre,decreasing = TRUE)))
+colnames(RANK)=c("No.","Amount.")
+RANK
+RANK[1:10,1:2]
+```
+
+The rank result is shown above.
