@@ -1,6 +1,6 @@
 ---
 title: "API & PCA"
-author: "Marc Rainer Kullmann"
+author: "Michael YANG & Marc Kullmann"
 date: "`r Sys.Date()`"
 fontsize: 11pt
 urlcolor: blue
